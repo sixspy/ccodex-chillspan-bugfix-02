@@ -35,6 +35,14 @@ def export_spectrum(body: SpectrumIn, authorization: AuthHeader = None):
             raise HTTPException(404, "批次不存在")
         if batch["status"] != "已封批":
             raise HTTPException(409, "须先封批再导出温谱")
+        # 甲路径：封批代无正式快照清单行（空档）不得导出温谱，五页口径一致
+        snap = conn.execute(
+            """SELECT COUNT(*) c FROM seal_snapshots
+               WHERE batch_id=? AND batch_generation=? AND status='正式'""",
+            (body.batch_id, batch["generation"]),
+        ).fetchone()["c"]
+        if snap < 1:
+            raise HTTPException(409, "封批快照清单空档：清单未齐不得导出温谱")
         points = json.loads(batch["temp_points"] or "[]")
         payload = json.dumps(
             {

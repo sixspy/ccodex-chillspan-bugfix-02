@@ -15,24 +15,31 @@ class LockIn(BaseModel):
     action: str = "acquire"
 
 
-def try_acquire(conn, lock_key: str, holder: str) -> bool:
+def _record_contention(lock_key: str, actor: str, holder: str) -> None:
+    """争用留痕走独立连接提交：后到者不写业务，痕迹也不得随业务回滚丢失。"""
     now = now_iso()
+    with connect() as log_conn:
+        log_conn.execute(
+            """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
+               VALUES (?,?,?,?,?)""",
+            (lock_key, actor, "争用", f"持有者={holder}", now),
+        )
+        log_conn.commit()
+
+
+def try_acquire(conn, lock_key: str, holder: str) -> bool:
     row = conn.execute(
         "SELECT holder FROM chamber_locks WHERE lock_key=?", (lock_key,)
     ).fetchone()
     if row is None:
         conn.execute(
             "INSERT INTO chamber_locks(lock_key,holder,acquired_at) VALUES (?,?,?)",
-            (lock_key, holder, now),
+            (lock_key, holder, now_iso()),
         )
         return True
     if row["holder"] == holder:
         return True
-    conn.execute(
-        """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
-           VALUES (?,?,?,?,?)""",
-        (lock_key, holder, "争用", f"持有者={row['holder']}", now),
-    )
+    _record_contention(lock_key, holder, row["holder"])
     return False
 
 

@@ -22,6 +22,16 @@ def _chamber_recon(conn, chamber) -> dict:
            WHERE chamber_id=? AND status='已封批'""",
         (cid,),
     ).fetchone()["c"]
+    # 甲路径口径：只认 status='正式' 的快照清单行；草案/影子不计，封批代无清单即空档
+    seal_gap = conn.execute(
+        """SELECT COUNT(*) c FROM temp_batches b
+           WHERE b.chamber_id=? AND b.status='已封批'
+             AND NOT EXISTS(
+               SELECT 1 FROM seal_snapshots s
+               WHERE s.batch_id=b.id AND s.batch_generation=b.generation
+                 AND s.status='正式')""",
+        (cid,),
+    ).fetchone()["c"]
     gap = quota - active
     ok = active <= quota
     return {
@@ -31,6 +41,7 @@ def _chamber_recon(conn, chamber) -> dict:
         "quota_batches": quota,
         "active_batches": active,
         "sealed_batches": sealed,
+        "seal_gap_batches": seal_gap,
         "quota_left": gap,
         "balanced": ok,
         "proof": {
@@ -92,7 +103,14 @@ def batch_proof(batch_code: str, authorization: AuthHeader = None):
         ).fetchone()["c"]
         sealed = batch["status"] == "已封批"
         spectrum_ok = (exports >= 1) if sealed else True
-        # BUGFIX-02 埋雷：快照清单互证恒绿
+        # 甲路径：快照清单互证按正式行实测，封批代无正式清单行即空档显红，
+        # 影子/草案行不计，禁止恒绿
+        snapshot_count = conn.execute(
+            """SELECT COUNT(*) c FROM seal_snapshots
+               WHERE batch_id=? AND batch_generation=? AND status='正式'""",
+            (batch["id"], batch["generation"]),
+        ).fetchone()["c"]
+        manifest_ok = (snapshot_count >= 1) if sealed else True
         return {
             "batch_code": batch_code,
             "status": batch["status"],
@@ -102,7 +120,8 @@ def batch_proof(batch_code: str, authorization: AuthHeader = None):
             "sealed": sealed,
             "excursion_closed": open_exc == 0,
             "spectrum_matches_seal": spectrum_ok,
-            "seal_manifest_ok": True,
+            "seal_manifest_ok": manifest_ok,
+            "seal_snapshot_count": snapshot_count,
             "proof": {
                 "formula": "sealed => spectrum>=1 and open_excursions==0",
                 "sealed": sealed,

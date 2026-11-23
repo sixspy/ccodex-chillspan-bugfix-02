@@ -14,6 +14,18 @@ from validators import summarize_points, validate_probe_online, validate_temp_po
 router = APIRouter(tags=["batches"])
 
 
+def _attach_seal_status(conn, d: dict) -> dict:
+    """当代正式快照清单齐套口径：封批代必须有同代 status='正式' 清单行。"""
+    snap_count = conn.execute(
+        """SELECT COUNT(*) c FROM seal_snapshots
+           WHERE batch_id=? AND batch_generation=? AND status='正式'""",
+        (d["id"], d["generation"]),
+    ).fetchone()["c"]
+    d["seal_snapshot_count"] = snap_count
+    d["manifest_complete"] = (snap_count >= 1) if d["status"] == "已封批" else True
+    return d
+
+
 def _next_batch_code(conn, chamber_id: int) -> str:
     ch = conn.execute(
         "SELECT chamber_code FROM cold_chambers WHERE id=?", (chamber_id,)
@@ -49,6 +61,7 @@ def list_batches(authorization: AuthHeader = None, status: str | None = None):
         for r in rows:
             d = dict(r)
             d["temp_points"] = json.loads(d["temp_points"] or "[]")
+            _attach_seal_status(conn, d)
             items.append(d)
         return {"items": items}
 
@@ -76,6 +89,7 @@ def get_batch(batch_id: int, authorization: AuthHeader = None):
             "SELECT * FROM seal_snapshots WHERE batch_id=? ORDER BY id DESC",
             (batch_id,),
         ).fetchall()
+        _attach_seal_status(conn, data)
         return {
             "batch": data,
             "excursions": [dict(e) for e in exc],

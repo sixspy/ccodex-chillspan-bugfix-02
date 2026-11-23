@@ -10,6 +10,26 @@ from models import LineageIn
 router = APIRouter(tags=["lineage"])
 
 
+def _batch_seal_view(conn, batch_id: int | None) -> dict | None:
+    if not batch_id:
+        return None
+    b = conn.execute(
+        "SELECT id,batch_code,generation,status FROM temp_batches WHERE id=?",
+        (batch_id,),
+    ).fetchone()
+    if not b:
+        return None
+    snaps = conn.execute(
+        """SELECT COUNT(*) c FROM seal_snapshots
+           WHERE batch_id=? AND batch_generation=? AND status='正式'""",
+        (batch_id, b["generation"]),
+    ).fetchone()["c"]
+    view = dict(b)
+    view["manifest_complete"] = (snaps >= 1) if b["status"] == "已封批" else True
+    view["seal_snapshot_count"] = snaps
+    return view
+
+
 @router.get("/api/lineage")
 def list_edges(authorization: AuthHeader = None):
     require_user(authorization)
@@ -21,7 +41,13 @@ def list_edges(authorization: AuthHeader = None):
                LEFT JOIN temp_batches b ON b.id=e.to_batch_id
                ORDER BY e.id DESC"""
         ).fetchall()
-        return {"items": [dict(r) for r in rows]}
+        items = []
+        for r in rows:
+            d = dict(r)
+            d["from_batch"] = _batch_seal_view(conn, r["from_batch_id"])
+            d["to_batch"] = _batch_seal_view(conn, r["to_batch_id"])
+            items.append(d)
+        return {"items": items}
 
 
 @router.post("/api/lineage")
@@ -74,4 +100,5 @@ def batch_lineage(batch_id: int, authorization: AuthHeader = None):
         return {
             "outbound": [dict(e) for e in out_edges],
             "inbound": [dict(e) for e in in_edges],
+            "batch": _batch_seal_view(conn, batch_id),
         }

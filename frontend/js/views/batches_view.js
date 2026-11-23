@@ -19,14 +19,20 @@ export const batchesViewTemplate = `
     <button class="secondary" @click="refresh">刷新</button>
   </div>
   <table class="data-table">
-    <thead><tr><th>批次</th><th>仓间</th><th>探头</th><th>状态</th><th>代</th><th>极值</th><th></th></tr></thead>
+    <thead><tr><th>批次</th><th>仓间</th><th>探头</th><th>状态</th><th>代</th><th>快照清单</th><th>极值</th><th></th></tr></thead>
     <tbody>
       <tr v-for="b in batches" :key="b.id" @click="selectBatch(b)">
         <td>{{ b.batch_code }}</td>
         <td>{{ b.chamber_code }}</td>
         <td>{{ b.probe_code }}</td>
         <td><span class="badge" :class="statusClass(b.status)">{{ b.status }}</span></td>
-        <td>{{ b.generation }}</td>
+        <td>G{{ b.generation }}</td>
+        <td>
+          <template v-if="b.status === '已封批'">
+            <span class="badge" :class="b.manifest_complete ? 'pass' : 'fail'">{{ b.manifest_complete ? "齐套(" + b.seal_snapshot_count + ")" : "清单空档" }}</span>
+          </template>
+          <template v-else>—</template>
+        </td>
         <td>{{ fmtTemp(b.min_observed) }} / {{ fmtTemp(b.max_observed) }}</td>
         <td><button class="mini-btn" @click.stop="loadBatchDetail(b.id)">详情</button></td>
       </tr>
@@ -34,7 +40,10 @@ export const batchesViewTemplate = `
   </table>
   <div v-if="batchDetail" class="detail-box">
     <h3>{{ batchDetail.batch.batch_code }} · {{ batchDetail.batch.cargo_ref }}</h3>
-    <p>点数 {{ batchDetail.batch.temp_points.length }} · 游标 {{ batchDetail.excursions.length }} 条</p>
+    <p>代 G{{ batchDetail.batch.generation }} · 点数 {{ batchDetail.batch.temp_points.length }} · 游标 {{ batchDetail.excursions.length }} 条 · 快照清单 {{ batchDetail.seals.length }} 行（正式 {{ batchDetail.seals.filter(s => s.status === '正式').length }} 行）</p>
+    <p v-if="batchDetail.batch.status === '已封批'">
+      口径：<span class="badge" :class="batchDetail.batch.manifest_complete ? 'pass' : 'fail'">{{ batchDetail.batch.manifest_complete ? "代与清单齐套" : "代已升清单空档" }}</span>
+    </p>
   </div>
 </section>
 `;

@@ -30,8 +30,8 @@ def seal_batch(body: SealIn, authorization: AuthHeader = None):
     user = require_writer(authorization)
     lock_key = f"batch:{body.batch_id}"
     with connect() as conn:
-        require_lock(conn, lock_key, user)
         try:
+            require_lock(conn, lock_key, user)
             batch = conn.execute(
                 """SELECT b.*, p.calibration_due, p.probe_code
                    FROM temp_batches b JOIN probes p ON p.id=b.probe_id
@@ -61,26 +61,46 @@ def seal_batch(body: SealIn, authorization: AuthHeader = None):
                 ensure_ascii=False,
             )
             now = now_iso()
-            # BUGFIX-02 埋雷：只抬代计数，不插 seal_snapshots 清单行
-            conn.execute(
-                """UPDATE temp_batches SET status='已封批', generation=generation+1,
-                   sealed_at=? WHERE id=?""",
-                (now, body.batch_id),
+            new_generation = gen + 1
+            # 甲路径（docs/seal_generation_minutes.md 裁决）：
+            # 先插 seal_snapshots 当代正式行，再抬代计数，同一事务内零增一行，
+            # 清单行写不进则整笔回滚，代次绝不先移。禁止影子草案/事后晋升（乙路封死）。
+            cur = conn.execute(
+                """INSERT INTO seal_snapshots(batch_id,batch_generation,manifest,
+                   status,sealed_at) VALUES (?,?,?,?,?)""",
+                (body.batch_id, new_generation, manifest, "正式", now),
             )
+            seal_id = cur.lastrowid
+            updated = conn.execute(
+                """UPDATE temp_batches SET status='已封批', generation=?,
+                   sealed_at=? WHERE id=? AND status!='已封批'""",
+                (new_generation, now, body.batch_id),
+            )
+            if updated.rowcount != 1:
+                raise HTTPException(409, "批次状态不允许封批")
             write_audit(
                 conn,
                 user,
                 "batch_seal",
                 batch["batch_code"],
-                {"seal_id": None, "generation": gen + 1, "manifest_ok": True},
+                {
+                    "seal_id": seal_id,
+                    "generation": new_generation,
+                    "manifest_ok": True,
+                },
             )
             conn.commit()
             return {
-                "seal_id": None,
+                "seal_id": seal_id,
                 "batch_code": batch["batch_code"],
-                "generation": gen + 1,
+                "generation": new_generation,
                 "status": "已封批",
-                "fake_manifest": True,
+                "manifest_complete": True,
             }
+        except Exception:
+            conn.rollback()
+            raise
         finally:
+            # 回滚业务后再释放锁并单独提交，避免锁删除被回滚导致死锁
             release(conn, lock_key, user)
+            conn.commit()

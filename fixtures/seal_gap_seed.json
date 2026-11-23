@@ -1,0 +1,20 @@
+[
+  {
+    "batch_code": "TB-SEALGAP-001",
+    "chamber_code": "CK-HN-03",
+    "probe_code": "PR-HN-C2",
+    "cargo_ref": "封批清单空档夹具货载",
+    "status": "已封批",
+    "generation": 2,
+    "sealed_at": "2026-11-22T20:00:00",
+    "temp_points": [
+      {"t": "08:00", "c": 4.1},
+      {"t": "09:00", "c": 4.6},
+      {"t": "10:00", "c": 5.0}
+    ],
+    "min_observed": 4.1,
+    "max_observed": 5.0,
+    "snapshot_rows": [],
+    "gap_note": "升代接口已把 generation 抬到 2 并置已封批，但 seal_snapshots 零行：代已升清单空档"
+  }
+]

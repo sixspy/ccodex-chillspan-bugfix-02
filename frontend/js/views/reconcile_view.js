@@ -11,18 +11,24 @@ export const reconcileViewTemplate = `
     <button class="secondary" @click="loadReconAll">全仓对账</button>
   </div>
   <div v-if="reconOne" class="detail-box">
-    <p>配额 {{ reconOne.quota_batches }} · 在批 {{ reconOne.active_batches }} · <span :class="reconOne.balanced ? 'ok' : 'bad'">{{ reconOne.balanced ? "平衡" : "失衡" }}</span></p>
+    <p>配额 {{ reconOne.quota_batches }} · 在批 {{ reconOne.active_batches }} · 已封批 {{ reconOne.sealed_batches }} · <span :class="reconOne.balanced ? 'ok' : 'bad'">{{ reconOne.balanced ? "平衡" : "失衡" }}</span></p>
+    <p>封批快照清单空档 <span :class="reconOne.seal_gap_batches > 0 ? 'bad' : 'ok'">{{ reconOne.seal_gap_batches || 0 }}</span> 批（空档即代已升清单缺行，不得亮齐）</p>
   </div>
   <div v-if="proofOne" class="detail-box">
-    <p>状态 {{ proofOne.status }} · 开放游标 {{ proofOne.open_excursions }} · 温谱 {{ proofOne.spectrum_exports }}</p>
+    <p>状态 {{ proofOne.status }} · 代 G{{ proofOne.generation }} · 开放游标 {{ proofOne.open_excursions }} · 温谱 {{ proofOne.spectrum_exports }}</p>
+    <p>当代正式快照清单 {{ proofOne.seal_snapshot_count || 0 }} 行 ·
+      <span class="badge" :class="proofOne.seal_manifest_ok ? 'pass' : 'fail'">{{ proofOne.seal_manifest_ok ? "清单齐套" : "清单空档" }}</span>
+    </p>
   </div>
   <table class="data-table">
-    <thead><tr><th>仓间</th><th>区域</th><th>在批</th><th>余配额</th><th>平衡</th></tr></thead>
+    <thead><tr><th>仓间</th><th>区域</th><th>在批</th><th>已封批</th><th>清单空档</th><th>余配额</th><th>平衡</th></tr></thead>
     <tbody>
       <tr v-for="r in reconAllItems" :key="r.chamber_code">
         <td>{{ r.chamber_code }}</td>
         <td>{{ r.region }}</td>
         <td>{{ r.active_batches }}</td>
+        <td>{{ r.sealed_batches }}</td>
+        <td><span :class="(r.seal_gap_batches || 0) > 0 ? 'bad' : 'ok'">{{ r.seal_gap_batches || 0 }}</span></td>
         <td>{{ r.quota_left }}</td>
         <td>{{ r.balanced ? "是" : "否" }}</td>
       </tr>
